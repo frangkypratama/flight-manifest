@@ -1,0 +1,10 @@
+credentials.json
+token.pickle
+.env
+processed_ids.json
+downloads/
+logs/
+venv/
+__pycache__/
+*.pyc
+test-pdfs/
