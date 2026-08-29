@@ -10,6 +10,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import requests
@@ -21,6 +22,8 @@ ENV_PATH = BASE_DIR / ".env"
 
 PDFTOTEXT_TIMEOUT = 30
 CLAUDE_TIMEOUT = 300
+CLAUDE_MAX_RETRIES = 3
+CLAUDE_RETRY_DELAY = 15
 HTTP_TIMEOUT = 30
 
 TEXT_EXTENSIONS = {".txt", ""}
@@ -65,21 +68,32 @@ def call_claude(document_text: str) -> str:
     prompt_template = PROMPT_PATH.read_text(encoding="utf-8")
     prompt = f"{prompt_template}\n\n---\n\nDocument text:\n\n{document_text}"
 
-    try:
-        result = subprocess.run(
-            ["claude", "-p", "--output-format", "text", "--allowedTools", "", "--max-turns", "1"],
-            input=prompt,
-            capture_output=True,
-            text=True,
-            timeout=CLAUDE_TIMEOUT,
-        )
-    except subprocess.TimeoutExpired as exc:
-        raise RuntimeError(f"claude -p timeout setelah {CLAUDE_TIMEOUT}s") from exc
+    last_error = None
 
-    if result.returncode != 0:
-        raise RuntimeError(f"claude -p gagal: {result.stderr.strip()}")
+    for attempt in range(1, CLAUDE_MAX_RETRIES + 1):
+        try:
+            result = subprocess.run(
+                ["claude", "-p", "--output-format", "text", "--allowedTools", "", "--max-turns", "10"],
+                input=prompt,
+                capture_output=True,
+                text=True,
+                timeout=CLAUDE_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired as exc:
+            last_error = RuntimeError(f"claude -p timeout setelah {CLAUDE_TIMEOUT}s")
+            last_error.__cause__ = exc
+        else:
+            if result.returncode == 0:
+                return result.stdout
 
-    return result.stdout
+            detail = result.stderr.strip() or result.stdout.strip() or f"exit code {result.returncode}"
+            last_error = RuntimeError(f"claude -p gagal: {detail}")
+
+        if attempt < CLAUDE_MAX_RETRIES:
+            print(f"  ⚠️  Percobaan {attempt} gagal ({last_error}), coba lagi dalam {CLAUDE_RETRY_DELAY}s...")
+            time.sleep(CLAUDE_RETRY_DELAY)
+
+    raise last_error
 
 
 def extract_json(text: str) -> dict:

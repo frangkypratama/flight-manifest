@@ -176,6 +176,23 @@ def process_document_for_gmail(pdf_path: Path, config: dict, message_id: str, fi
     return None
 
 
+def search_all_messages(service, query: str) -> list:
+    """Ambil semua pesan yang cocok query, ikuti pagination sampai habis."""
+    messages = []
+    page_token = None
+
+    while True:
+        response = service.users().messages().list(
+            userId="me", q=query, maxResults=500, pageToken=page_token
+        ).execute()
+        messages.extend(response.get("messages", []))
+        page_token = response.get("nextPageToken")
+        if not page_token:
+            break
+
+    return messages
+
+
 def main() -> None:
     config = load_config()
     service = get_gmail_service()
@@ -185,19 +202,18 @@ def main() -> None:
 
     log(f"🔎 Mencari email: {config['GMAIL_QUERY']}")
 
-    response = service.users().messages().list(
-        userId="me", q=config["GMAIL_QUERY"], maxResults=50
-    ).execute()
-    messages = response.get("messages", [])
+    messages = search_all_messages(service, config["GMAIL_QUERY"])
     new_messages = [m for m in messages if m["id"] not in processed_set]
 
     log(f"📬 {len(messages)} email ditemukan, {len(new_messages)} baru")
 
     success = 0
     failed = 0
+    total = len(new_messages)
 
-    for msg in new_messages:
+    for index, msg in enumerate(new_messages, start=1):
         message_id = msg["id"]
+        log(f"\n[{index}/{total}]")
         ok = process_message(service, config, message_id)
 
         if ok:
@@ -207,7 +223,7 @@ def main() -> None:
         else:
             failed += 1
 
-    log(f"\nSelesai: {success} sukses, {failed} gagal dari {len(new_messages)} email baru")
+    log(f"\nSelesai: {success} sukses, {failed} gagal dari {total} email baru")
 
 
 if __name__ == "__main__":
