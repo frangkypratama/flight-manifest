@@ -56,15 +56,17 @@ def load_env(path=os.path.join(HERE, ".env")):
 
 
 # ------------------------------------------------------------------- Claude
-def run_claude(data: bytes, env: dict) -> str:
+def run_claude(data: bytes, env: dict, filename: str = "dokumen.pdf") -> str:
     """Claude membaca PDF-nya sendiri lewat tool Read (satu-satunya tool yang diizinkan)."""
     prompt = open(PROMPT_PATH, encoding="utf-8").read()
     timeout = int(env.get("CLAUDE_TIMEOUT", "420"))
-    # cwd folder sementara berisi hanya dokumen.pdf, supaya Claude tidak membaca CLAUDE.md milik repo.
+    ext = ".txt" if filename.lower().endswith(".txt") else ".pdf"
+    doc = "dokumen" + ext
+    # cwd folder sementara berisi hanya dokumen.pdf / dokumen.txt, supaya Claude tidak membaca CLAUDE.md milik repo.
     with tempfile.TemporaryDirectory() as work:
-        with open(os.path.join(work, "dokumen.pdf"), "wb") as f:
+        with open(os.path.join(work, doc), "wb") as f:
             f.write(data)
-        stdin = prompt + "\n\nDokumen: dokumen.pdf (di folder kerja saat ini). Baca semua halamannya dengan tool Read."
+        stdin = prompt + f"\n\nDokumen: {doc} (di folder kerja saat ini). Baca semuanya dengan tool Read."
         cmd = ["claude", "-p", "--output-format", "text", "--tools", "Read",
                "--allowedTools", "Read", "--no-session-persistence"]
         log("INFO", "Claude mulai membaca PDF (biasanya 1-2 menit)...")
@@ -256,7 +258,7 @@ def process_document(filename, data, meta, env, dry_run):
     sha = hashlib.sha256(data).hexdigest()
     t0 = time.time()
     try:
-        raw = run_claude(data, env)
+        raw = run_claude(data, env, filename)
         parsed = extract_json(raw)
     except Exception as e:
         log("ERROR", f"{filename}: Claude gagal: {e}")
@@ -317,7 +319,7 @@ def dh(v):
 
 
 def iter_pdfs(msg, depth=0):
-    """Semua lampiran PDF, termasuk yang ada di dalam lampiran .eml / message/rfc822."""
+    """Semua lampiran PDF dan .txt (manifest IU/Batik dikirim sebagai .txt), termasuk yang ada di dalam .eml."""
     n = 0
     for part in msg.walk():
         name = dh(part.get_filename()) if part.get_filename() else ""
@@ -334,6 +336,10 @@ def iter_pdfs(msg, depth=0):
             if data:
                 n += 1
                 yield (name or f"lampiran-{depth}-{n}.pdf"), data
+        elif name.lower().endswith(".txt"):  # hanya lampiran bernama .txt, bukan badan email
+            data = part.get_payload(decode=True)
+            if data:
+                yield name, data
 
 
 def load_state():
@@ -348,7 +354,7 @@ def save_state(st):
     os.replace(tmp, STATE_PATH)
 
 
-def run_mailbox(env, dry_run, limit, list_only=False):
+def run_mailbox(env, dry_run, limit, list_only=False, only_uid=0):
     lock = open(LOCK_PATH, "w")
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -379,6 +385,10 @@ def run_mailbox(env, dry_run, limit, list_only=False):
     _, data = m.uid("SEARCH", None, "ALL")
     uids = [int(u) for u in data[0].split() if int(u) > st["last_uid"]]
     log("INFO", f"{len(uids)} email baru (UID > {st['last_uid']})")
+    if only_uid:
+        uids = [u for u in uids if u == only_uid]
+        if not uids:
+            log("ERROR", f"UID {only_uid} tidak ada di daftar email baru")
     if limit:
         uids = uids[:limit]
 
@@ -435,6 +445,7 @@ def main():
     g.add_argument("--file", help="proses satu PDF lokal")
     g.add_argument("--mailbox", action="store_true", help="proses email baru di mailbox")
     ap.add_argument("--dry-run", action="store_true", help="jangan kirim ke server, jangan ubah state")
+    ap.add_argument("--uid", type=int, default=0, help="proses hanya email dengan UID ini (lihat --list); gabungkan dengan --dry-run")
     ap.add_argument("--list", action="store_true", help="hanya daftar isi email (tanpa Claude, tanpa kirim, tanpa ubah state)")
     ap.add_argument("--limit", type=int, default=0, help="batasi jumlah email per putaran")
     a = ap.parse_args()
@@ -445,7 +456,7 @@ def main():
         r = process_document(os.path.basename(a.file), data,
                              {"message_id": f"local-{sha}", "sender": None}, env, a.dry_run)
         sys.exit(0 if r == "ok" else 1)
-    sys.exit(run_mailbox(env, a.dry_run or a.list, a.limit, a.list))
+    sys.exit(run_mailbox(env, a.dry_run or a.list, a.limit, a.list, a.uid))
 
 
 if __name__ == "__main__":
