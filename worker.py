@@ -444,8 +444,10 @@ def karantina(filename, payload, alasan):
     path = os.path.join(REVIEW_DIR, os.path.basename(filename) + ".json")
     with open(path, "w", encoding="utf-8") as f:
         json.dump({"alasan": alasan, "payload": payload}, f, ensure_ascii=False, indent=2)
-    for a in alasan:
+    for a in alasan[:8]:
         log("ERROR", f"{filename}: {a}")
+    if len(alasan) > 8:
+        log("ERROR", f"{filename}: ... dan {len(alasan) - 8} alasan lain (lengkap di file karantina)")
     log("ERROR", f"{filename}: KARANTINA, tidak dikirim. Tinjau out/review/{os.path.basename(filename)}.json")
     return "karantina"
 
