@@ -69,6 +69,7 @@ def run_claude(data: bytes, env: dict) -> str:
             ["claude", "-p", "--output-format", "text", "--tools", "Read",
              "--allowedTools", "Read", "--no-session-persistence"],
             input=stdin, capture_output=True, text=True, timeout=timeout, cwd=work,
+            env=env,  # termasuk CLAUDE_CODE_OAUTH_TOKEN dari .env
         )
     if r.returncode != 0:
         detail = (r.stderr.strip() or r.stdout.strip() or "(tanpa keluaran)")[:300]
