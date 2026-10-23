@@ -8,3 +8,9 @@ venv/
 __pycache__/
 *.pyc
 test-pdfs/
+
+# worker
+state.json
+worker.lock
+out/
+sample/

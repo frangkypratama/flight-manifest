@@ -1,4 +1,1 @@
-google-api-python-client
-google-auth-oauthlib
-requests
-python-dotenv
+# worker.py hanya memakai pustaka bawaan Python 3.12; tidak ada dependensi pip.
