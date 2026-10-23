@@ -9,22 +9,29 @@ Email manifest masuk lewat **forward Gmail ke mailbox `manifest@bcbandaaceh.id`*
 ## Alur
 
 1. Login IMAP ke `manifest@bcbandaaceh.id`, ambil email baru (UID lebih besar dari `last_uid` di `state.json`).
-2. Ambil semua lampiran PDF, termasuk PDF di dalam lampiran `.eml` (`message/rfc822`).
-3. `claude -p` membaca PDF itu langsung (tool Read, tanpa `pdftotext`) dan menghasilkan JSON sesuai `prompts/parse_flight_doc.md`.
-4. Worker menormalkan kunci unik (tanggal `DDMMMYY`, nomor penerbangan angka saja, nama dengan pemisah `/`) dan mencocokkan hasil dengan total yang tertulis di dokumen. Kalau tidak cocok, JSON tidak dikirim.
-5. POST ke `HOSTING_URL` dengan header `X-API-Key`.
-6. Status "selesai" hanya dicatat setelah server membalas 200 atau 201.
+2. Ambil semua lampiran PDF dan `.txt` (manifest IU dikirim sebagai `.txt`), termasuk yang ada di dalam lampiran `.eml`.
+3. **Tahap 1, baca dan bersihkan.** `claude -p` membaca dokumen langsung (tool Read, tanpa `pdftotext`) lalu menghasilkan JSON menurut `prompts/parse_flight_doc.md`. Nilai yang diisi dari sumber lain (nama file, daftar maskapai) dicatat di `koreksi`, lengkap dengan sumber dan buktinya.
+4. **Tahap 2, khusus laporan bagasi.** Nama di laporan bagasi sering terpotong. Claude melengkapinya dari manifest penerbangan dan tanggal yang sama (`store/`), hanya jika PNR sama dan awalan nama cocok dengan tepat satu penumpang (`prompts/patch_names.md`). Kalau manifest belum ada, laporan menunggu (maksimal 12 jam).
+5. **Tahap 3, pemeriksa independen.** Panggilan `claude -p` terpisah membandingkan hasil dengan dokumen asli baris demi baris (`prompts/verify_flight_doc.md`). Kalau ada selisih, hasil dikoreksi lalu diperiksa ulang sekali.
+6. Kode mencocokkan jumlah (boarded, no-show, bayi, bagasi, berat) dengan Totals dokumen, lalu POST ke `HOSTING_URL` dengan header `X-API-Key`.
+7. Dokumen yang tidak bisa dipastikan benar masuk **karantina** (`out/review/`), tidak pernah dikirim. Status "selesai" hanya dicatat setelah server membalas 200 atau 201.
+
+Kebijakan: lebih baik lambat dan mahal daripada data yang tidak sesuai. Satu dokumen memakan 2 sampai 4 panggilan Claude.
 
 ## File
 
 ```
 vps-worker/
 ├── worker.py                  ← skrip utama
-├── prompts/parse_flight_doc.md
+├── prompts/parse_flight_doc.md   ← tahap 1
+├── prompts/patch_names.md        ← tahap 2 (bagasi)
+├── prompts/verify_flight_doc.md  ← tahap 3
+├── airlines.json                 ← nama maskapai → kode (hanya yang sudah disetujui)
+├── store/ pending/               ← acuan manifest dan dokumen yang menunggu (dibuat otomatis)
 ├── .env                       ← IMAP_HOST, IMAP_USER, IMAP_PASS, HOSTING_URL, API_KEY, CLAUDE_TIMEOUT
 ├── .env.example
 ├── state.json                 ← dibuat otomatis (UID terakhir, lampiran selesai, percobaan ulang)
-└── out/                       ← JSON hasil per dokumen (berisi nama penumpang, jangan dikomit)
+└── out/ (dan out/review/)     ← JSON hasil dan karantina (berisi nama penumpang, jangan dikomit)
 ```
 
 ## Pemakaian

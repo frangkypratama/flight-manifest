@@ -48,13 +48,28 @@ Kalau dokumen bukan salah satu dari ketiganya, kembalikan hanya:
       "ticket_no": null
     }
   ],
-  "notes": []
+  "notes": [],
+  "koreksi": []
 }
+
+## Tiga jenis pekerjaan: membersihkan, mengisi, menambal
+
+Bukan hanya menyalin. Tetapi setiap perubahan harus punya bukti yang bisa ditunjuk, dan tidak pernah menebak.
+
+1. Membersihkan (bentuk saja, tanpa menambah informasi): lihat aturan di bawah. Tidak perlu dicatat.
+2. Mengisi nilai yang ada di tempat lain pada dokumen yang sama, atau pada nama file lampiran, atau pada daftar maskapai di bawah. Wajib dicatat di `koreksi`.
+3. Menambal tidak pernah dari dugaan. Kalau tidak ada bukti, isi `null`.
+
+Setiap pekerjaan jenis 2 dicatat sebagai satu entri `koreksi`:
+`{"field": "airline_code", "asli": null, "baru": "FY", "sumber": "nama_file", "bukti": "Header hanya 'Flight: 3224 PENBTJ'"}`
+`sumber` salah satu: `dokumen`, `nama_file`, `daftar_maskapai`. `bukti` tidak boleh memuat nama penumpang, nomor tiket, PNR, atau nomor tag; rujuk dengan nomor `Cnt`.
+
+Urutan sumber untuk kode maskapai (`airline_code`): (a) tercetak di dokumen; (b) nama file lampiran; (c) daftar maskapai yang disetujui di bawah, hanya jika nama maskapai di dokumen persis ada di daftar. Kalau sumber-sumber itu saling bertentangan, atau tidak ada yang memuatnya, isi `null` dan jelaskan di `notes`.
 
 ## Aturan pembersihan data
 
 1. `flight_date`: format `DDMMMYY` huruf besar, misalnya `01OCT26`. Ambil dari baris header penerbangan, misalnya `Flight: AK 423 KULBTJ Date: 01Oct26/0735` (bagian setelah `/` adalah jam, jangan dimasukkan). Jangan memakai tanggal cetak laporan dan jangan memakai kolom `Date` di baris penumpang, karena kolom itu berisi tanggal berbeda-beda per baris.
-2. `airline_code`: dua karakter huruf besar (`AK`). `flight_no`: hanya angka, tanpa spasi dan tanpa kode maskapai (`423`, bukan `AK423` atau `AK 423`). `airline`: nama ringkas maskapai (`AirAsia`, bukan `AirAsia Berhad`). Kode maskapai kadang tidak tercetak di header (misalnya hanya `Flight: 3224 PENBTJ`). Cari dulu di seluruh dokumen. Kalau memang tidak ada, boleh diambil dari nama file lampiran yang diberikan di akhir (misalnya `MANIFEST FY 3224 23OCT26.pdf` → `FY`), dan tulis di `notes` kalimat persis: `airline_code diambil dari nama file lampiran, tidak tercetak di dokumen`. Kalau dokumen dan nama file bertentangan, dokumen yang benar. Kalau keduanya tidak memuat kode, isi `null`; jangan menebak dari nama maskapai.
+2. `airline_code`: dua karakter huruf besar (`AK`). `flight_no`: hanya angka, tanpa spasi dan tanpa kode maskapai (`423`, bukan `AK423` atau `AK 423`). `airline`: nama ringkas maskapai (`AirAsia`, bukan `AirAsia Berhad`). Kode maskapai kadang tidak tercetak di header (misalnya hanya `Flight: 3224 PENBTJ`); aturan sumbernya ada di bagian "Tiga jenis pekerjaan" di atas.
 3. `route`: tepat 6 huruf besar tanpa spasi atau tanda (`KULBTJ`). Kalau di dokumen tertulis `KUL-BTJ` atau `KUL→BTJ`, ubah menjadi `KULBTJ`.
 4. `name`: salin persis seperti tercetak, kecuali pemisah nama belakang dan nama depan harus `/` (bukan `,`) dan spasi ganda dijadikan satu spasi. Jangan mengubah huruf besar/kecil, jangan memperbaiki ejaan, jangan menggabungkan atau membuang nama.
 5. `pnr`: 6 karakter huruf besar/angka. `seat`: seperti `6A`. `fare_class`: salin persis seperti tercetak (biasanya satu huruf; kalau tercetak lebih dari satu huruf, misalnya `OMH`, tulis utuh, jangan dipotong). Nilai yang tidak ada di dokumen diisi `null`, bukan `""` atau `"-"`.
