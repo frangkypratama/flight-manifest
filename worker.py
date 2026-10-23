@@ -71,7 +71,8 @@ def run_claude(data: bytes, env: dict) -> str:
             input=stdin, capture_output=True, text=True, timeout=timeout, cwd=work,
         )
     if r.returncode != 0:
-        raise RuntimeError(f"claude exit {r.returncode}: {r.stderr.strip()[:300]}")
+        detail = (r.stderr.strip() or r.stdout.strip() or "(tanpa keluaran)")[:300]
+        raise RuntimeError(f"claude exit {r.returncode}: {detail}")
     return r.stdout
 
 
