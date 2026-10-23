@@ -356,9 +356,19 @@ def run_mailbox(env, dry_run, limit):
         log("INFO", "proses lain masih berjalan, keluar")
         return 0
 
+    need = ["IMAP_USER", "IMAP_PASS"] + ([] if dry_run else ["HOSTING_URL", "API_KEY"])
+    kosong = [k for k in need if not str(env.get(k, "")).strip()]
+    if kosong:
+        log("ERROR", f"isi dulu di .env: {', '.join(kosong)} (nilai tidak ditampilkan)")
+        return 2
+
     st = load_state()
     m = imaplib.IMAP4_SSL(env.get("IMAP_HOST", "mail.bcbandaaceh.id"), 993)
-    m.login(env["IMAP_USER"], env["IMAP_PASS"])
+    try:
+        m.login(env["IMAP_USER"], env["IMAP_PASS"])
+    except imaplib.IMAP4.error as e:
+        log("ERROR", f"login IMAP ditolak untuk {env['IMAP_USER']}: {e}. Periksa IMAP_USER dan IMAP_PASS di .env")
+        return 2
     m.select("INBOX", readonly=True)
     uv = int(m.response("UIDVALIDITY")[1][0])
     if st["uidvalidity"] != uv:
