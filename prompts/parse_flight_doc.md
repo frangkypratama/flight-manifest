@@ -54,13 +54,13 @@ Kalau dokumen bukan salah satu dari ketiganya, kembalikan hanya:
 ## Aturan pembersihan data
 
 1. `flight_date`: format `DDMMMYY` huruf besar, misalnya `01OCT26`. Ambil dari baris header penerbangan, misalnya `Flight: AK 423 KULBTJ Date: 01Oct26/0735` (bagian setelah `/` adalah jam, jangan dimasukkan). Jangan memakai tanggal cetak laporan dan jangan memakai kolom `Date` di baris penumpang, karena kolom itu berisi tanggal berbeda-beda per baris.
-2. `airline_code`: dua karakter huruf besar (`AK`). `flight_no`: hanya angka, tanpa spasi dan tanpa kode maskapai (`423`, bukan `AK423` atau `AK 423`). `airline`: nama ringkas maskapai (`AirAsia`, bukan `AirAsia Berhad`).
+2. `airline_code`: dua karakter huruf besar (`AK`). `flight_no`: hanya angka, tanpa spasi dan tanpa kode maskapai (`423`, bukan `AK423` atau `AK 423`). `airline`: nama ringkas maskapai (`AirAsia`, bukan `AirAsia Berhad`). Kode maskapai kadang tidak tercetak di header (misalnya hanya `Flight: 3224 PENBTJ`). Cari dulu di seluruh dokumen. Kalau memang tidak ada, boleh diambil dari nama file lampiran yang diberikan di akhir (misalnya `MANIFEST FY 3224 23OCT26.pdf` → `FY`), dan tulis di `notes` kalimat persis: `airline_code diambil dari nama file lampiran, tidak tercetak di dokumen`. Kalau dokumen dan nama file bertentangan, dokumen yang benar. Kalau keduanya tidak memuat kode, isi `null`; jangan menebak dari nama maskapai.
 3. `route`: tepat 6 huruf besar tanpa spasi atau tanda (`KULBTJ`). Kalau di dokumen tertulis `KUL-BTJ` atau `KUL→BTJ`, ubah menjadi `KULBTJ`.
 4. `name`: salin persis seperti tercetak, kecuali pemisah nama belakang dan nama depan harus `/` (bukan `,`) dan spasi ganda dijadikan satu spasi. Jangan mengubah huruf besar/kecil, jangan memperbaiki ejaan, jangan menggabungkan atau membuang nama.
-5. `pnr`: 6 karakter huruf besar/angka. `seat`: seperti `6A`. `fare_class`: satu huruf. Nilai yang tidak ada di dokumen diisi `null`, bukan `""` atau `"-"`.
+5. `pnr`: 6 karakter huruf besar/angka. `seat`: seperti `6A`. `fare_class`: salin persis seperti tercetak (biasanya satu huruf; kalau tercetak lebih dari satu huruf, misalnya `OMH`, tulis utuh, jangan dipotong). Nilai yang tidak ada di dokumen diisi `null`, bukan `""` atau `"-"`.
 6. `status`: `boarded` untuk penumpang di bagian "Checked-in/Boarded", `noshow` untuk bagian "No Shows". Bagian lain (Unconfirmed, Stand-by, Thru) yang berisi penumpang tidak dimasukkan ke `passengers`, tetapi tuliskan jumlah dan alasannya di `notes`.
 7. Bayi: baris `INFT: NAMA,NAMA` di bawah seorang penumpang adalah bayi yang dibawa penumpang itu. Buat satu entri terpisah: `pax_type` = `INF`, `name` dari baris INFT (pemisah `/`), `pnr` dan `status` sama dengan penumpang pembawanya, `seat` dan `fare_class` = `null`. Semua penumpang lain `pax_type` = `ADT`. Jangan memakai `CHD` kecuali dokumen menandai anak per penumpang (laporan Flight Close hanya memberi jumlah anak).
-8. `gender`, `bag_weight`, `bag_tags`, `ticket_no`: isi `null` untuk tipe `manifest` karena tidak ada per penumpang di dokumen itu. Jangan mengisi `bag_weight` dari total bagasi penerbangan.
+8. `gender`, `bag_weight`, `bag_tags`, `ticket_no`: isi hanya kalau tercetak per penumpang di dokumen (misalnya baris `TKT` di bawah seorang penumpang → `ticket_no` milik penumpang itu). Kalau tidak tercetak per penumpang, isi `null`. Jangan mengisi `bag_weight` dari total bagasi penerbangan.
 9. `summary` diambil dari bagian "Totals" dokumen:
    - `total_pax` = Total Manifested (tidak termasuk bayi)
    - `total_boarded` = Total Checked-in
@@ -81,3 +81,8 @@ Kalau dokumen bukan salah satu dari ketiganya, kembalikan hanya:
 
 - `baggage`: satu penumpang bisa punya beberapa baris bagasi. Gabungkan menjadi satu entri: `bag_weight` = jumlah berat, `bag_tags` = daftar semua nomor tag. `status` = `boarded`. `seat` dan `fare_class` = `null`.
 - `enhanced_manifest`: uraikan format yang dipisah garis miring (LNAME/FNAME/TYPE/SEAT) menjadi `name` = `LNAME/FNAME`, `pax_type` dari kolom TYPE, `seat` dari kolom SEAT.
+
+## Catatan (`notes`)
+
+- `notes` berisi hal yang perlu diketahui manusia (nilai yang diisi dari sumber lain, bagian yang kosong, selisih jumlah).
+- JANGAN menulis nama penumpang, nomor tiket, PNR, atau nomor tag bagasi di `notes`. Rujuk penumpang dengan nomor `Cnt` atau nomor barisnya.
