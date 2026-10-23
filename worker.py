@@ -348,7 +348,7 @@ def save_state(st):
     os.replace(tmp, STATE_PATH)
 
 
-def run_mailbox(env, dry_run, limit):
+def run_mailbox(env, dry_run, limit, list_only=False):
     lock = open(LOCK_PATH, "w")
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -393,7 +393,13 @@ def run_mailbox(env, dry_run, limit):
         if "mailer-daemon" in sender.lower() or subj.startswith("Delivery Status Notification"):
             log("WARN", f"UID {uid}: pesan gagal-kirim dari {sender!r}. Ada email manifest yang TIDAK sampai ke mailbox ini")
         status = "ok"
-        for fname, blob in iter_pdfs(msg):
+        pdfs = list(iter_pdfs(msg))
+        bagian = [f"{p.get_content_type()}:{p.get_filename() or '-'}" for p in msg.walk()
+                  if not p.is_multipart()]
+        log("INFO", f"UID {uid} | {sender} | PDF ditemukan: {len(pdfs)} | bagian: {'; '.join(bagian)[:300]}")
+        if list_only:
+            continue
+        for fname, blob in pdfs:
             key = f"{mid}|{fname}|{hashlib.sha256(blob).hexdigest()[:16]}"
             if key in st["done"]:
                 continue
@@ -429,6 +435,7 @@ def main():
     g.add_argument("--file", help="proses satu PDF lokal")
     g.add_argument("--mailbox", action="store_true", help="proses email baru di mailbox")
     ap.add_argument("--dry-run", action="store_true", help="jangan kirim ke server, jangan ubah state")
+    ap.add_argument("--list", action="store_true", help="hanya daftar isi email (tanpa Claude, tanpa kirim, tanpa ubah state)")
     ap.add_argument("--limit", type=int, default=0, help="batasi jumlah email per putaran")
     a = ap.parse_args()
     env = load_env()
@@ -438,7 +445,7 @@ def main():
         r = process_document(os.path.basename(a.file), data,
                              {"message_id": f"local-{sha}", "sender": None}, env, a.dry_run)
         sys.exit(0 if r == "ok" else 1)
-    sys.exit(run_mailbox(env, a.dry_run, a.limit))
+    sys.exit(run_mailbox(env, a.dry_run or a.list, a.limit, a.list))
 
 
 if __name__ == "__main__":
