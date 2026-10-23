@@ -53,8 +53,21 @@ MAX_ATTEMPTS = 3
 MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
 
 
+LOG_PATH = os.path.join(HERE, "logs", "worker.log")
+
+
 def log(level, msg):
-    print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} [{level}] {msg}", flush=True)
+    """Cetak ke layar dan tambahkan ke logs/worker.log (jalan manual maupun cron)."""
+    line = f"{time.strftime('%Y-%m-%d %H:%M:%S')} [{level}] {msg}"
+    print(line, flush=True)
+    try:
+        os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
+        if os.path.exists(LOG_PATH) and os.path.getsize(LOG_PATH) > 5_000_000:
+            os.replace(LOG_PATH, LOG_PATH + ".1")      # putar log: simpan 1 file lama
+        with open(LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass                                            # gagal menulis log tidak boleh menghentikan worker
 
 
 def load_env(path=os.path.join(HERE, ".env")):

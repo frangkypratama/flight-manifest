@@ -52,4 +52,4 @@ python3 worker.py --mailbox                            # jalan sungguhan (dipang
 - Satu lampiran dikirim dengan `gmail_message_id` = `<Message-ID>#<hash 8 karakter>`, karena controller melewati kiriman dengan ID yang sama. Nama kolomnya tetap `gmail_message_id` supaya skema tidak berubah.
 - Pesan gagal-kirim dari `mailer-daemon` di mailbox dicatat sebagai peringatan. Artinya ada email manifest yang tidak sampai.
 - Satu proses pada satu waktu (`flock` pada `worker.lock`).
-- Cron: `*/5 * * * * cd /root/flight-manifest && python3 worker.py --mailbox >> logs/worker.log 2>&1`
+- Cron: `*/5 * * * * cd /root/flight-manifest && python3 worker.py --mailbox >> logs/cron.out 2>&1` (log utama otomatis ke `logs/worker.log`; `cron.out` hanya menangkap error Python yang tidak sempat masuk log)
