@@ -94,8 +94,8 @@ Urutan sumber untuk kode maskapai (`airline_code`): (a) tercetak di dokumen; (b)
 
 ## Aturan tipe lain
 
-- `baggage`: satu penumpang bisa punya beberapa baris bagasi. Gabungkan menjadi satu entri: `bag_weight` = jumlah berat, `bag_tags` = daftar semua nomor tag. `status` = `boarded`. `seat` dan `fare_class` = `null`.
-- `enhanced_manifest`: uraikan format yang dipisah garis miring (LNAME/FNAME/TYPE/SEAT) menjadi `name` = `LNAME/FNAME`, `pax_type` dari kolom TYPE, `seat` dari kolom SEAT.
+- `baggage`: pada baris Totals laporan, nilai `Passengers` adalah `total_pax` (jumlah penumpang yang punya bagasi), `Bags` adalah `total_bags`, `Weight` adalah `total_weight_kg`. Isi `total_boarded` dan `total_no_shows` dengan `null`. Satu penumpang bisa punya beberapa baris bagasi. Gabungkan menjadi satu entri: `bag_weight` = jumlah berat, `bag_tags` = daftar semua nomor tag. `status` = `boarded`. `seat` dan `fare_class` = `null`.
+- `enhanced_manifest`: uraikan format yang dipisah garis miring (LNAME/FNAME/TYPE/SEAT) menjadi `name` = `LNAME/FNAME`, `seat` dari kolom SEAT. Kolom TYPE bisa berisi kode jenis kelamin (`M`/`F`) dan bukan tipe penumpang: kalau begitu isi `gender`, dan tentukan `pax_type` dari kolom penanda (misalnya SPECIAL: `CHD` atau `INF`); baris tanpa penanda = `ADT`. Format ini tidak punya bagian Boarded/No Show: isi `status` dengan `null` (worker yang mengisinya). Kalau Totals mencatat bayi tetapi namanya tidak tercetak, jangan membuat entri bayi; tulis selisihnya di `notes`. Isi `summary` hanya dari angka yang tercetak di Totals (`male`, `female`, `child`, `infant`, `total_bags`, `total_weight_kg`); `total_pax` = `null` kalau tidak tercetak.
 
 ## Catatan (`notes`)
 

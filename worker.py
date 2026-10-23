@@ -255,7 +255,7 @@ def normalize(p: dict):
             errors.append(f"penumpang #{i}: nama kosong")
             continue
         status = str(q.get("status") or "").lower().replace("-", "").replace("_", "").replace(" ", "")
-        if status not in ("boarded", "noshow"):
+        if status not in ("boarded", "noshow") and not (out["doc_type"] == "enhanced_manifest" and status == ""):
             errors.append(f"penumpang #{i}: status tidak valid {q.get('status')!r}")
         ptype = (blank_to_none(q.get("pax_type")) or "ADT").upper()
         if ptype not in ("ADT", "CHD", "INF"):
@@ -288,6 +288,23 @@ def normalize(p: dict):
     return out, errors
 
 
+def isi_status_enhanced(payload):
+    """Enhanced Passenger Manifest tidak punya bagian No Show: semua baris tercantum = boarded.
+    Aturan per jenis dokumen (bukan tebakan per sel), dicatat di koreksi supaya terlihat."""
+    if payload.get("doc_type") != "enhanced_manifest":
+        return payload
+    kosong = [q for q in payload["passengers"] if not q.get("status")]
+    if not kosong:
+        return payload
+    for q in kosong:
+        q["status"] = "boarded"
+    payload["koreksi"] = (payload.get("koreksi") or []) + [{
+        "tahap": "kode", "op": "isi", "baris": None, "field": "status", "asli": None, "baru": "boarded",
+        "sumber": "jenis_dokumen",
+        "bukti": f"{len(kosong)} baris: Enhanced Passenger Manifest tidak punya bagian No Show/Boarded; semua yang tercantum dianggap boarded"}]
+    return payload
+
+
 def check_totals(p: dict):
     """Cocokkan hasil Claude dengan total yang tertulis di dokumen. Kembalikan (error, warning)."""
     errors, warns = [], []
@@ -312,11 +329,24 @@ def check_totals(p: dict):
         cmp("bayi", n_inf, s.get("infant"))
         cmp("manifested", n_board + n_ns, s.get("total_pax"))
     elif p["doc_type"] == "baggage":
-        cmp("jumlah penumpang", len(pax), s.get("total_pax"), required=True)
         total_w = sum(q["bag_weight"] or 0 for q in pax)
-        cmp("total berat", total_w, s.get("total_weight_kg"))
+        n_tags = sum(len(q["bag_tags"] or []) for q in pax)
+        if s.get("total_pax") is not None:
+            cmp("jumlah penumpang", len(pax), s.get("total_pax"))
+            cmp("total berat", total_w, s.get("total_weight_kg"))
+        else:   # tanpa jumlah penumpang, pakai jumlah tas dan berat sebagai pembanding wajib
+            cmp("jumlah tag bagasi", n_tags, s.get("total_bags"), required=True)
+            cmp("total berat", total_w, s.get("total_weight_kg"), required=True)
     else:
-        cmp("jumlah penumpang", len(adult), s.get("total_pax"))
+        mf = [s.get(k) for k in ("male", "female", "child")]
+        expected = sum(mf) if all(isinstance(v, int) for v in mf) else s.get("total_pax")
+        cmp("jumlah penumpang (L+P+anak)", len(adult), expected, required=True)
+        cmp("anak", sum(1 for q in pax if q["pax_type"] == "CHD"), s.get("child"))
+        cmp("jumlah tag bagasi", sum(len(q["bag_tags"] or []) for q in pax), s.get("total_bags"))
+        cmp("total berat", sum(q["bag_weight"] or 0 for q in pax), s.get("total_weight_kg"))
+        if s.get("infant") not in (None, n_inf):
+            warns.append(f"bayi: dokumen mencatat {s.get('infant')}, terbaca {n_inf} entri (nama bayi tidak tercetak?); "
+                         "bayi tidak masuk database")
 
     names = [q["name"] for q in pax]
     dup = sorted({n for n in names if names.count(n) > 1})
@@ -509,6 +539,7 @@ def process_document(filename, data, meta, env, dry_run):
         payload, errs = normalize(parsed)
         if errs:
             return karantina(filename, payload, errs)
+        payload = isi_status_enhanced(payload)
 
     # ---- tahap 2: laporan bagasi -> lengkapi nama terpotong dari manifest yang sama
     if payload["doc_type"] == "baggage":

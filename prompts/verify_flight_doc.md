@@ -6,7 +6,7 @@ Keluaranmu dibaca program. Kembalikan HANYA satu objek JSON valid, tanpa markdow
 
 ## Yang diperiksa
 1. Header: `doc_type`, `airline`, `airline_code`, `flight_no`, `route`, `flight_date`.
-2. Setiap penumpang, BARIS DEMI BARIS dari awal sampai akhir dokumen: `name`, `pnr`, `seat`, `fare_class`, `status`, `pax_type`, dan bila ada di dokumen: `bag_weight`, `bag_tags`, `ticket_no`, `gender`.
+2. Setiap penumpang, BARIS DEMI BARIS dari awal sampai akhir dokumen: `name`, `pnr`, `seat`, `fare_class`, `status` (kecuali pada `enhanced_manifest`, yang tidak punya status di dokumen: nilai `boarded` itu aturan worker, bukan sel dokumen, jangan dipermasalahkan), `pax_type`, dan bila ada di dokumen: `bag_weight`, `bag_tags`, `ticket_no`, `gender`.
 3. Penumpang yang ada di dokumen tetapi tidak ada di `hasil.json` (hilang), dan yang ada di `hasil.json` tetapi tidak ada di dokumen (tambahan).
 4. `summary` terhadap bagian Totals dokumen.
 
