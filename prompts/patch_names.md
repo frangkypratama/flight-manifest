@@ -17,14 +17,14 @@ Untuk setiap penumpang di `hasil.json`:
 ## Format keluaran
 {
   "patches": [
-    {"op": "ubah", "baris": 7, "field": "name", "baru": "NAMA LENGKAP/DARI REFERENSI", "sumber": "dokumen_lain",
+    {"op": "ubah", "baris": 7, "field": "name", "nilai_json": "NAMA TERPOTONG", "baru": "NAMA LENGKAP/DARI REFERENSI", "sumber": "dokumen_lain",
      "bukti": "baris 7: PNR sama dengan referensi, awalan nama cocok, satu kandidat"}
   ],
   "ragu": [{"baris": 9, "alasan": "dua kandidat ber-PNR sama, keduanya cocok awalan"}],
   "alasan": "satu kalimat"
 }
 
-Nomor `baris` merujuk ke urutan penumpang di `hasil.json` (mulai dari 1).
+Setiap penumpang di `hasil.json` punya bidang `no`. `baris` SELALU memakai nilai `no` itu. `nilai_json` wajib berisi `name` saat ini pada baris itu; program menolak patch bila tidak sama.
 
 ## Larangan
 - Jangan menulis nama atau PNR di `bukti`, `alasan`, atau `ragu`. Rujuk dengan nomor baris. Nama hanya boleh ada di bidang `baru`.

@@ -45,7 +45,8 @@ VERIFY_PATH = os.path.join(HERE, "prompts", "verify_flight_doc.md")
 PATCH_PATH = os.path.join(HERE, "prompts", "patch_names.md")
 AIRLINES_PATH = os.path.join(HERE, "airlines.json")
 MAX_WAIT_HOURS = 12
-VERIFY_ROUNDS = 2
+VERIFY_ROUNDS = 3
+CONFIRM_PATH = os.path.join(HERE, "prompts", "confirm_cells.md")
 PAX_FIELDS = {"name", "pnr", "seat", "fare_class", "gender", "pax_type", "bag_weight", "bag_tags", "status", "ticket_no"}
 HEADER_FIELDS = {"doc_type", "airline", "airline_code", "flight_no", "route", "flight_date"}
 MAX_ATTEMPTS = 3
@@ -125,14 +126,28 @@ def tahap_baca(data, filename, env):
     return extract_json(call_claude(env, instruksi, {doc: data}, "baca"))
 
 
-def tahap_periksa(data, filename, payload, env, putaran):
+def lihat(payload):
+    """Salinan untuk dibaca pemeriksa: tanpa catatan pembaca, dengan nomor urut `no` pada tiap penumpang."""
+    v = {k: val for k, val in payload.items() if k not in ("notes", "koreksi", "passengers")}
+    v["passengers"] = [dict({"no": i}, **q) for i, q in enumerate(payload["passengers"], 1)]
+    return json.dumps(v, ensure_ascii=False, indent=1).encode("utf-8")
+
+
+def tahap_periksa(data, filename, payload, env, putaran, ref_pax=None):
     """Tahap 3: pemeriksa independen membandingkan hasil dengan dokumen asli."""
     doc = doc_name(filename)
+    airlines = read(AIRLINES_PATH) if os.path.exists(AIRLINES_PATH) else "{}"
     instruksi = (read(VERIFY_PATH)
-                 + "\n\n## Aturan pembaca (acuan pembersihan)\n" + read(PROMPT_PATH)
-                 + f"\n\nBerkas: {doc} (dokumen asli) dan hasil.json (yang diperiksa). Baca keduanya dengan tool Read."
+                 + f"\n\n## Daftar maskapai (data)\n{airlines}\n"
+                 + "\n## Aturan pembaca (acuan pembersihan)\n" + read(PROMPT_PATH)
+                 + f"\n\nBerkas: {doc} (dokumen asli) dan hasil.json (yang diperiksa)"
+                 + (" dan referensi.json (penumpang manifest)" if ref_pax else "")
+                 + ". Baca semuanya dengan tool Read."
                  + hint_nama_file(filename))
-    files = {doc: data, "hasil.json": json.dumps(payload, ensure_ascii=False, indent=1).encode("utf-8")}
+    files = {doc: data, "hasil.json": lihat(payload)}
+    if ref_pax:
+        files["referensi.json"] = json.dumps([{"name": q["name"], "pnr": q["pnr"]} for q in ref_pax],
+                                             ensure_ascii=False, indent=1).encode("utf-8")
     return extract_json(call_claude(env, instruksi, files, f"periksa {putaran}"))
 
 
@@ -140,10 +155,19 @@ def tahap_tambal_nama(payload, ref_pax, env):
     """Tahap 2 (laporan bagasi): lengkapi nama terpotong dari manifest penerbangan yang sama."""
     instruksi = (read(PATCH_PATH)
                  + "\n\nBerkas: hasil.json (laporan bagasi) dan referensi.json (penumpang manifest). Baca keduanya dengan tool Read.")
-    files = {"hasil.json": json.dumps(payload, ensure_ascii=False, indent=1).encode("utf-8"),
+    files = {"hasil.json": lihat(payload),
              "referensi.json": json.dumps([{"name": q["name"], "pnr": q["pnr"]} for q in ref_pax],
                                           ensure_ascii=False, indent=1).encode("utf-8")}
     return extract_json(call_claude(env, instruksi, files, "tambal nama"))
+
+
+def tahap_konfirmasi(data, filename, sel, env):
+    """Pembaca ketiga: baca ulang sel yang diperdebatkan tanpa melihat kandidat, lalu salin apa adanya."""
+    doc = doc_name(filename)
+    instruksi = (read(CONFIRM_PATH)
+                 + f"\n\nBerkas: {doc} (dokumen asli) dan sel.json. Baca keduanya dengan tool Read.")
+    files = {doc: data, "sel.json": json.dumps(sel, ensure_ascii=False, indent=1).encode("utf-8")}
+    return extract_json(call_claude(env, instruksi, files, "konfirmasi sel"))
 
 
 def extract_json(raw: str) -> dict:
@@ -327,6 +351,77 @@ def apply_patches(payload, patches, tahap):
     return p, koreksi, errs
 
 
+# ------------------------------------------- penjaga patch (mekanis, tidak menafsir dokumen)
+def sama(a, b):
+    if a is None or b is None:
+        return a is None and b is None
+    if isinstance(a, (list, dict)) or isinstance(b, (list, dict)):
+        return json.dumps(a, sort_keys=True, ensure_ascii=False) == json.dumps(b, sort_keys=True, ensure_ascii=False)
+    return str(a).strip() == str(b).strip()
+
+
+def validasi_patch(payload, patches):
+    """Patch hanya boleh menyentuh sel yang isinya SAAT INI sama dengan `nilai_json`. Mencegah salah baris."""
+    pax, errs = payload["passengers"], []
+    for t in patches or []:
+        op, f = t.get("op"), t.get("field")
+        if op == "ubah":
+            i = t.get("baris")
+            if f not in PAX_FIELDS or not (isinstance(i, int) and 1 <= i <= len(pax)):
+                errs.append(f"patch ditolak: baris/kolom tidak valid (baris={i!r}, kolom={f!r})")
+            elif not sama(pax[i - 1].get(f), t.get("nilai_json")):
+                errs.append(f"patch ditolak: isi baris {i} kolom {f} tidak sama dengan yang dikira pemeriksa (salah baris?)")
+        elif op == "ubah_header":
+            if f not in HEADER_FIELDS or not sama(payload.get(f), t.get("nilai_json")):
+                errs.append(f"patch header ditolak: kolom {f!r}")
+        else:
+            errs.append(f"patch '{op}' membutuhkan tinjauan manusia")
+    return errs
+
+
+def cek_nama_tambal(payload, ref_pax, patches):
+    """Nama hasil tambalan harus ada di manifest dengan PNR yang sama dan berawalan nama bagasi."""
+    pax, errs = payload["passengers"], []
+    refset = {(r["name"], r["pnr"]) for r in ref_pax}
+    for t in patches or []:
+        if t.get("field") != "name":
+            errs.append("tambal nama hanya boleh mengubah kolom name")
+            continue
+        q = pax[t["baris"] - 1]
+        awal = re.sub(r"[\s/]+$", "", q["name"].upper())
+        baru = str(t.get("baru") or "")
+        if (baru, q["pnr"]) not in refset or not baru.upper().startswith(awal):
+            errs.append(f"tambalan nama baris {t['baris']} tidak terbukti dari manifest (PNR/awalan tidak cocok)")
+    return errs
+
+
+def konfirmasi_sel(payload, patches, data, filename, env):
+    """Tiap patch dibaca ulang oleh pembaca ketiga. Kembalikan (diterima, ditolak, tidak_jelas)."""
+    sel = []
+    for n, t in enumerate(patches, 1):
+        if t["op"] == "ubah":
+            q = payload["passengers"][t["baris"] - 1]
+            penanda = {k: v for k, v in q.items() if k != t["field"] and v is not None}
+            sel.append({"id": n, "kolom": t["field"], "penanda": penanda})
+        else:
+            sel.append({"id": n, "kolom": t["field"], "penanda": {}})
+    hasil = tahap_konfirmasi(data, filename, sel, env)
+    baca = {h.get("id"): h for h in hasil.get("hasil") or []}
+    terima, tolak, ragu = [], [], []
+    for n, t in enumerate(patches, 1):
+        h = baca.get(n) or {}
+        nilai = h.get("nilai")
+        if nilai is None or h.get("yakin") is False:
+            ragu.append(t)
+        elif sama(nilai, t.get("baru")):
+            terima.append(t)
+        elif sama(nilai, t.get("nilai_json")):
+            tolak.append(t)      # pembaca ketiga setuju dengan hasil awal: pemeriksa yang keliru
+        else:
+            ragu.append(t)       # tiga bacaan berbeda semua
+    return terima, tolak, ragu
+
+
 # ------------------------------------------------------ acuan manifest & karantina
 def flight_key(p):
     return f"{p['airline_code']}{p['flight_no']}_{p['flight_date']}"
@@ -417,18 +512,24 @@ def process_document(filename, data, meta, env, dry_run):
         except Exception as e:
             log("ERROR", f"{filename}: Claude gagal (tambal nama): {e}")
             return "retry"
+        perr = validasi_patch(payload, hasil.get("patches"))
+        if not perr:
+            perr = cek_nama_tambal(payload, ref["passengers"], hasil.get("patches"))
+        ragu = hasil.get("ragu") or []
+        if perr:
+            return karantina(filename, payload, perr)
         p2, k, perr = apply_patches(payload, hasil.get("patches"), "tambal_nama")
         p2["koreksi"] = (p2.get("koreksi") or []) + k
-        ragu = hasil.get("ragu") or []
         payload, errs = normalize(p2)
         if perr or ragu or errs:
             return karantina(filename, payload, perr + errs + [
                 f"nama tidak bisa dipastikan (baris {r.get('baris')}): {r.get('alasan')}" for r in ragu])
 
-    # ---- tahap 3: pemeriksa independen (maksimal VERIFY_ROUNDS putaran)
+    # ---- tahap 3: pemeriksa independen; perbedaan dibaca ulang pembaca ketiga sebelum diterapkan
+    ref_pax = (muat_acuan(payload) or {}).get("passengers") if payload["doc_type"] == "baggage" else None
     for putaran in range(1, VERIFY_ROUNDS + 1):
         try:
-            hasil = tahap_periksa(data, filename, payload, env, putaran)
+            hasil = tahap_periksa(data, filename, payload, env, putaran, ref_pax)
         except Exception as e:
             log("ERROR", f"{filename}: Claude gagal (periksa): {e}")
             return "retry"
@@ -439,9 +540,24 @@ def process_document(filename, data, meta, env, dry_run):
             return karantina(filename, payload, [f"pemeriksa: {verdict}: {hasil.get('alasan')}"] + [
                 f"ragu (baris {r.get('baris')}): {r.get('alasan')}" for r in ragu])
         if putaran == VERIFY_ROUNDS:
-            return karantina(filename, payload, [f"masih ada {len(patches)} selisih setelah dikoreksi sekali"])
-        log("WARN", f"{filename}: pemeriksa menemukan {len(patches)} selisih, dikoreksi lalu diperiksa ulang")
-        p2, k, perr = apply_patches(payload, patches, "pemeriksa")
+            return karantina(filename, payload, [f"masih ada {len(patches)} selisih setelah dikoreksi"])
+        perr = validasi_patch(payload, patches)
+        if perr:
+            return karantina(filename, payload, perr)
+        log("WARN", f"{filename}: pemeriksa menemukan {len(patches)} selisih, dibaca ulang oleh pembaca ketiga")
+        try:
+            terima, tolak, tdkjelas = konfirmasi_sel(payload, patches, data, filename, env)
+        except Exception as e:
+            log("ERROR", f"{filename}: Claude gagal (konfirmasi): {e}")
+            return "retry"
+        log("INFO", f"{filename}: {len(terima)} selisih dibenarkan, {len(tolak)} ditolak (hasil awal benar), {len(tdkjelas)} tidak jelas")
+        if tdkjelas:
+            return karantina(filename, payload, [f"{len(tdkjelas)} sel tidak bisa dipastikan oleh tiga pembaca"])
+        if not terima:
+            break  # semua laporan pemeriksa dibantah pembaca ketiga: hasil awal dipertahankan
+        p2, k, perr = apply_patches(payload, terima, "pemeriksa")
+        for c in k:
+            c["bukti"] = (c.get("bukti") or "") + " [dikonfirmasi pembaca ketiga]"
         p2["koreksi"] = (p2.get("koreksi") or []) + k
         payload, errs = normalize(p2)
         if perr or errs:
