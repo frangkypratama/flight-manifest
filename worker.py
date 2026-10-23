@@ -65,12 +65,26 @@ def run_claude(data: bytes, env: dict) -> str:
         with open(os.path.join(work, "dokumen.pdf"), "wb") as f:
             f.write(data)
         stdin = prompt + "\n\nDokumen: dokumen.pdf (di folder kerja saat ini). Baca semua halamannya dengan tool Read."
-        r = subprocess.run(
-            ["claude", "-p", "--output-format", "text", "--tools", "Read",
-             "--allowedTools", "Read", "--no-session-persistence"],
-            input=stdin, capture_output=True, text=True, timeout=timeout, cwd=work,
-            env=env,  # termasuk CLAUDE_CODE_OAUTH_TOKEN dari .env
-        )
+        cmd = ["claude", "-p", "--output-format", "text", "--tools", "Read",
+               "--allowedTools", "Read", "--no-session-persistence"]
+        log("INFO", "Claude mulai membaca PDF (biasanya 1-2 menit)...")
+        t0 = time.time()
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True, cwd=work, env=env)  # env: termasuk CLAUDE_CODE_OAUTH_TOKEN dari .env
+        payload = stdin
+        while True:
+            try:
+                out, err = proc.communicate(input=payload, timeout=15)
+                break
+            except subprocess.TimeoutExpired:
+                payload = None
+                waited = int(time.time() - t0)
+                if waited >= timeout:
+                    proc.kill()
+                    proc.communicate()
+                    raise RuntimeError(f"claude -p timeout setelah {timeout}s")
+                log("INFO", f"Claude masih bekerja... {waited}s")
+        r = subprocess.CompletedProcess(cmd, proc.returncode, out, err)
     if r.returncode != 0:
         detail = (r.stderr.strip() or r.stdout.strip() or "(tanpa keluaran)")[:300]
         raise RuntimeError(f"claude exit {r.returncode}: {detail}")
