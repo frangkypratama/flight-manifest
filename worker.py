@@ -706,7 +706,7 @@ def save_state(st):
     os.replace(tmp, STATE_PATH)
 
 
-def run_mailbox(env, dry_run, limit, list_only=False, only_uid=0):
+def run_mailbox(env, dry_run, limit, list_only=False, only_uid=0, terbaru=0):
     lock = open(LOCK_PATH, "w")
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -741,6 +741,8 @@ def run_mailbox(env, dry_run, limit, list_only=False, only_uid=0):
         uids = [u for u in uids if u == only_uid]
         if not uids:
             log("ERROR", f"UID {only_uid} tidak ada di daftar email baru")
+    if terbaru:
+        uids = uids[-terbaru:]      # N email paling baru (UID terbesar)
     if limit:
         uids = uids[:limit]
 
@@ -821,6 +823,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true", help="jangan kirim ke server, jangan ubah state")
     ap.add_argument("--uid", type=int, default=0, help="proses hanya email dengan UID ini (lihat --list); gabungkan dengan --dry-run")
     ap.add_argument("--list", action="store_true", help="hanya daftar isi email (tanpa Claude, tanpa kirim, tanpa ubah state)")
+    ap.add_argument("--terbaru", type=int, default=0, help="proses hanya N email paling baru (tanpa perlu tahu UID); gabungkan dengan --dry-run")
     ap.add_argument("--limit", type=int, default=0, help="batasi jumlah email per putaran")
     a = ap.parse_args()
     env = load_env()
@@ -830,7 +833,7 @@ def main():
         r = process_document(os.path.basename(a.file), data,
                              {"message_id": f"local-{sha}", "sender": None}, env, a.dry_run)
         sys.exit(0 if r == "ok" else 1)
-    sys.exit(run_mailbox(env, a.dry_run or a.list, a.limit, a.list, a.uid))
+    sys.exit(run_mailbox(env, a.dry_run or a.list, a.limit, a.list, a.uid, a.terbaru))
 
 
 if __name__ == "__main__":
